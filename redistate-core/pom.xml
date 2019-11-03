@@ -21,10 +21,6 @@
             <artifactId>scala-compiler</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.scalatest</groupId>
-            <artifactId>scalatest_${scala.compat.version}</artifactId>
-        </dependency>
-        <dependency>
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-sql_${scala.compat.version}</artifactId>
         </dependency>
@@ -36,6 +32,12 @@
             <groupId>com.renarde.redistate</groupId>
             <artifactId>redistate-tests</artifactId>
             <version>0.0.1</version>
+            <scope>test</scope>
+        </dependency>
+        <!--test dependencies-->
+        <dependency>
+            <groupId>org.scalatest</groupId>
+            <artifactId>scalatest_${scala.compat.version}</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

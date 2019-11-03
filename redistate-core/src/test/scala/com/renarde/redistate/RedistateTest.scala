@@ -1,4 +1,4 @@
-package com.renarde.redistate.core
+package com.renarde.redistate
 
 import com.renarde.redistate.tests.{RedisSupport, SparkSupport}
 import org.scalatest.FunSuite
