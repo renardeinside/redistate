@@ -10,7 +10,7 @@ trait SparkSupport extends BeforeAndAfterAll {
 
   override def beforeAll(): Unit = {
     spark = SparkSession.builder()
-      .appName("redistore-spark-test")
+      .appName("redistate-spark-test")
       .master("local[*]")
       .getOrCreate()
 

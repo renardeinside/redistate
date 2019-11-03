@@ -7,7 +7,7 @@ import redis.embedded.RedisServer
 class RedistateTest extends FunSuite with SparkSupport with RedisSupport {
 
   test("simple redis with spark mock test") {
-    assert(spark.sparkContext.isStopped)
+    assert(!spark.sparkContext.isStopped)
     assert(redisServer.isInstanceOf[RedisServer])
   }
 }
