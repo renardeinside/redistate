@@ -11,11 +11,12 @@ import org.scalatest.FunSuite
 
 class RedistateTest extends FunSuite with SparkSupport with RedisSupport with Logging {
 
-
   lazy val checkpointLocation: String = Files.createTempDirectory("redistate-test").toString
   var query: StreamingQuery = _
 
   test("execute stateful operation") {
+
+    spark.sparkContext.setLogLevel("INFO")
 
     implicit val sqlCtx: SQLContext = spark.sqlContext
     import sqlCtx.implicits._
@@ -46,7 +47,9 @@ class RedistateTest extends FunSuite with SparkSupport with RedisSupport with Lo
       .start()
 
     processDataWithLock(query)
+
   }
+
 
   def printBatch(batchData: Dataset[UserStatistics], batchId: Long): Unit = {
     log.info(s"Started working with batch id $batchId")

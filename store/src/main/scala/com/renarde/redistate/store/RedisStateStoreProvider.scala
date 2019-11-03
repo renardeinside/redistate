@@ -4,9 +4,9 @@ import com.renarde.redistate.store.RedisStateStoreProvider._
 import org.apache.hadoop.conf.Configuration
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.UnsafeRow
-import org.apache.spark.sql.execution.streaming.CheckpointFileManager
 import org.apache.spark.sql.execution.streaming.state.{StateStore, StateStoreConf, StateStoreId, StateStoreMetrics, StateStoreProvider, UnsafeRowPair}
 import org.apache.spark.sql.types.StructType
+import redis.clients.jedis.Jedis
 
 import scala.util.{Failure, Success, Try}
 
@@ -38,16 +38,13 @@ import scala.util.{Failure, Success, Try}
 
 class RedisStateStoreProvider extends StateStoreProvider with Logging {
 
-  type MapType = java.util.concurrent.ConcurrentHashMap[UnsafeRow, UnsafeRow]
-
   @volatile private var redisConf: RedisConf = _
   @volatile private var stateStoreId_ : StateStoreId = _
   @volatile private var keySchema: StructType = _
   @volatile private var valueSchema: StructType = _
   @volatile private var storeConf: StateStoreConf = _
   @volatile private var hadoopConf: Configuration = _
-  private lazy val baseDir = stateStoreId.storeCheckpointLocation()
-  private lazy val fm = CheckpointFileManager.create(baseDir, hadoopConf)
+
   override def init(
                      stateStoreId: StateStoreId,
                      keySchema: StructType,
@@ -62,18 +59,16 @@ class RedisStateStoreProvider extends StateStoreProvider with Logging {
     this.hadoopConf = hadoopConf
     this.redisConf = setRedisConf(this.storeConf.confs)
     log.info("Initializing the redis state store")
-    fm.mkdirs(baseDir)
 
   }
 
   override def stateStoreId: StateStoreId = stateStoreId_
 
-  override def close(): Unit = ???
+  override def close(): Unit = {}
 
-  override def getStore(version: Long): StateStore = {
+  override def getStore(version: Long): StateStore = synchronized {
     require(version >= 0, "Version cannot be less than 0")
-    val newMap = new MapType()
-    val store = new RedisStateStore(version, newMap)
+    val store = new RedisStateStore(version, redisConf)
     logInfo(s"Retrieved version $version of ${RedisStateStoreProvider.this} for update")
     store
   }
@@ -82,25 +77,70 @@ class RedisStateStoreProvider extends StateStoreProvider with Logging {
     s"RedisStateStoreProvider[id = (op=${stateStoreId.operatorId},part=${stateStoreId.partitionId}),redis=$redisConf]"
   }
 
-  class RedisStateStore(val version: Long, mapToUpdate: MapType) extends StateStore {
-    override def id: StateStoreId = ???
-
-    override def get(key: UnsafeRow): UnsafeRow = ???
-
-    override def put(key: UnsafeRow, value: UnsafeRow): Unit = ???
-
-    override def remove(key: UnsafeRow): Unit = ???
-
-    override def commit(): Long = ???
-
-    override def abort(): Unit = ???
-
-    override def iterator(): Iterator[UnsafeRowPair] = ???
-
-    override def metrics: StateStoreMetrics = ???
-
-    override def hasCommitted: Boolean = ???
+  private def verify(condition: => Boolean, msg: String): Unit = {
+    if (!condition) {
+      throw new IllegalStateException(msg)
+    }
   }
+
+  class RedisStateStore(val version: Long, redisConf: RedisConf) extends StateStore {
+
+    trait STATE
+
+    case object UPDATING extends STATE
+
+    case object COMMITTED extends STATE
+
+    case object ABORTED extends STATE
+
+    private val newVersion = version + 1
+    @volatile private var state: STATE = UPDATING
+
+    private lazy val commitableClient = new Jedis(redisConf.host, redisConf.port)
+    private lazy val commitableTransaction = commitableClient.multi()
+
+    override def id: StateStoreId = RedisStateStoreProvider.this.stateStoreId
+
+    override def get(key: UnsafeRow): UnsafeRow = {
+      val getClient = new Jedis(redisConf.host, redisConf.port)
+      val getTransaction = getClient.multi()
+      val transactionData = getTransaction.get(key.getBytes)
+      getTransaction.exec()
+      val valueBytes = transactionData.get()
+      val value = new UnsafeRow(valueSchema.fields.length)
+      if (valueBytes == null) return null
+      value.pointTo(valueBytes, valueBytes.length)
+      value
+    }
+
+    override def put(key: UnsafeRow, value: UnsafeRow): Unit = {
+      verify(state == UPDATING, "Cannot put after already committed or aborted")
+      commitableTransaction.set(key.getBytes, value.getBytes)
+    }
+
+    override def remove(unsafeKey: UnsafeRow): Unit = {}
+
+    override def commit(): Long = {
+      verify(state == UPDATING, "Cannot commit after already committed or aborted")
+      commitableTransaction.exec()
+      state = COMMITTED
+      log.info(s"Committed version $newVersion for $this")
+      newVersion
+    }
+
+    override def abort(): Unit = {}
+
+    override def iterator(): Iterator[UnsafeRowPair] = Iterator()
+
+    override def metrics: StateStoreMetrics = {
+      StateStoreMetrics(0, 0, Map())
+    }
+
+    override def hasCommitted: Boolean = {
+      state == COMMITTED
+    }
+  }
+
 }
 
 

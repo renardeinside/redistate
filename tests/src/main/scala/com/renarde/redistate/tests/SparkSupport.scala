@@ -15,6 +15,7 @@ trait SparkSupport extends BeforeAndAfterAll {
       .config("spark.sql.streaming.stateStore.providerClass", "com.renarde.redistate.store.RedisStateStoreProvider")
       .config("spark.sql.streaming.stateStore.redis.host", "localhost")
       .config("spark.sql.streaming.stateStore.redis.port", "6379")
+      .config("spark.sql.shuffle.partitions", "1")
       .getOrCreate()
 
     super.beforeAll()

@@ -29,6 +29,11 @@
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-streaming_${scala.compat.version}</artifactId>
         </dependency>
+        <dependency>
+            <groupId>redis.clients</groupId>
+            <artifactId>jedis</artifactId>
+            <version>3.1.0</version>
+        </dependency>
         <!--test dependencies-->
         <dependency>
             <groupId>org.scalatest</groupId>
