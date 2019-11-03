@@ -1,4 +1,4 @@
-package com.renarde.redistate
+package com.renarde.redistate.store
 
 import com.renarde.redistate.tests.{RedisSupport, SparkSupport}
 import org.scalatest.FunSuite
@@ -9,5 +9,9 @@ class RedistateTest extends FunSuite with SparkSupport with RedisSupport {
   test("simple redis with spark mock test") {
     assert(!spark.sparkContext.isStopped)
     assert(redisServer.isInstanceOf[RedisServer])
+  }
+
+  test("another test") {
+
   }
 }

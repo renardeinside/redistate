@@ -1,4 +1,4 @@
-package com.renarde.redistate
+package com.renarde.redistate.store
 
 import org.apache.hadoop.conf.Configuration
 import org.apache.spark.internal.Logging

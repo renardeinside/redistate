@@ -7,8 +7,8 @@
     <version>0.0.1</version>
 
     <modules>
-        <module>redistate-core</module>
-        <module>redistate-tests</module>
+        <module>store</module>
+        <module>tests</module>
     </modules>
 
     <properties>
