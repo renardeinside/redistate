@@ -13,8 +13,8 @@ trait SparkSupport extends BeforeAndAfterAll {
       .appName("redistate-spark-test")
       .master("local[*]")
       .config("spark.sql.streaming.stateStore.providerClass", "com.renarde.redistate.store.RedisStateStoreProvider")
-      .config("spark.sql.streaming.stateStore.redisHost", "localhost")
-      .config("spark.sql.streaming.stateStore.redisPort", "6379")
+      .config("spark.sql.streaming.stateStore.redis.host", "localhost")
+      .config("spark.sql.streaming.stateStore.redis.port", "6379")
       .getOrCreate()
 
     super.beforeAll()
