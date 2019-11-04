@@ -105,7 +105,7 @@ class RedisStateStoreProvider extends StateStoreProvider with Logging {
         override def get(key: UnsafeRow): UnsafeRow = {
             val getClient = new Jedis(redisConf.host, redisConf.port)
             val getTransaction = getClient.multi()
-            val transactionData = getTransaction.get(redisConf.bytePrefix ++ key.getBytes)
+            val transactionData = getTransaction.get(redisConf.getBytePrefix(version) ++ key.getBytes)
             getTransaction.exec()
             val valueBytes = transactionData.get()
             val value = new UnsafeRow(valueSchema.fields.length)
@@ -116,7 +116,7 @@ class RedisStateStoreProvider extends StateStoreProvider with Logging {
 
         override def put(key: UnsafeRow, value: UnsafeRow): Unit = {
             verify(state == UPDATING, "Cannot put after already committed or aborted")
-            commitableTransaction.set(redisConf.bytePrefix ++ key.getBytes, value.getBytes)
+            commitableTransaction.set(redisConf.getBytePrefix(newVersion) ++ key.getBytes, value.getBytes)
         }
 
         override def remove(unsafeKey: UnsafeRow): Unit = {}
@@ -133,7 +133,7 @@ class RedisStateStoreProvider extends StateStoreProvider with Logging {
 
         override def iterator(): Iterator[UnsafeRowPair] = {
             val iterClient = new Jedis(redisConf.host, redisConf.port)
-            val keysIter = iterClient.keys(redisConf.bytePrefix).iterator().asScala
+            val keysIter = iterClient.keys(redisConf.getBytePrefix(version)).iterator().asScala
             keysIter.map { redisKey =>
                 val key = new UnsafeRow(keySchema.fields.length)
                 val keyBytes = redisKey

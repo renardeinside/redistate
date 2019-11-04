@@ -42,10 +42,8 @@ class RedistateTest extends FunSuite with SparkSupport with RedisSupport with Lo
 
         val initialBatch = Seq(
             generateEvent(1),
-            generateEvent(1),
-            generateEvent(1),
-            generateEvent(1),
-            generateEvent(2)
+            generateEvent(2),
+            generateEvent(3)
         )
 
         visitsStream.addData(initialBatch)
@@ -54,8 +52,9 @@ class RedistateTest extends FunSuite with SparkSupport with RedisSupport with Lo
         spark.sql("select * from redistate_updates").show()
 
         val additionalBatch = Seq(
-            generateEvent(2),
-            generateEvent(3)
+            generateEvent(3),
+            generateEvent(3),
+            generateEvent(4)
         )
 
         visitsStream.addData(additionalBatch)
@@ -64,8 +63,8 @@ class RedistateTest extends FunSuite with SparkSupport with RedisSupport with Lo
 
         spark.sql("select * from redistate_updates").show()
 
-//        assert(result.find(_.userId == 2).get.totalVisits == 2)
-//        assert(result.find(_.userId == 3).get.totalVisits == 1)
+        //        assert(result.find(_.userId == 2).get.totalVisits == 2)
+        //        assert(result.find(_.userId == 3).get.totalVisits == 1)
     }
 
 
@@ -76,7 +75,6 @@ class RedistateTest extends FunSuite with SparkSupport with RedisSupport with Lo
     }
 
     def processDataWithLock(query: StreamingQuery): Unit = {
-        query.processAllAvailable()
         while (query.status.message != "Waiting for data to arrive") {
             log.info(s"Waiting for the query to finish processing, current status is ${query.status.message}")
             Thread.sleep(1)
