@@ -63,8 +63,6 @@ class RedistateTest extends FunSuite with SparkSupport with RedisSupport with Lo
 
         spark.sql("select * from redistate_updates").show()
 
-        //        assert(result.find(_.userId == 2).get.totalVisits == 2)
-        //        assert(result.find(_.userId == 3).get.totalVisits == 1)
     }
 
 

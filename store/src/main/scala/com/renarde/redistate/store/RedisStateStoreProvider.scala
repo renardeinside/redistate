@@ -129,7 +129,9 @@ class RedisStateStoreProvider extends StateStoreProvider with Logging {
             newVersion
         }
 
-        override def abort(): Unit = {}
+        override def abort(): Unit = {
+            commitableTransaction.discard()
+        }
 
         override def iterator(): Iterator[UnsafeRowPair] = {
             val iterClient = new Jedis(redisConf.host, redisConf.port)
