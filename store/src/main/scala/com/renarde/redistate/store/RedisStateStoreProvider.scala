@@ -8,6 +8,7 @@ import org.apache.spark.sql.execution.streaming.state.{StateStore, StateStoreCon
 import org.apache.spark.sql.types.StructType
 import redis.clients.jedis.Jedis
 
+import scala.collection.JavaConverters._
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -38,128 +39,147 @@ import scala.util.{Failure, Success, Try}
 
 class RedisStateStoreProvider extends StateStoreProvider with Logging {
 
-  @volatile private var redisConf: RedisConf = _
-  @volatile private var stateStoreId_ : StateStoreId = _
-  @volatile private var keySchema: StructType = _
-  @volatile private var valueSchema: StructType = _
-  @volatile private var storeConf: StateStoreConf = _
-  @volatile private var hadoopConf: Configuration = _
+    @volatile private var redisConf: RedisConf = _
+    @volatile private var stateStoreId_ : StateStoreId = _
+    @volatile private var keySchema: StructType = _
+    @volatile private var valueSchema: StructType = _
+    @volatile private var storeConf: StateStoreConf = _
+    @volatile private var hadoopConf: Configuration = _
 
-  override def init(
-                     stateStoreId: StateStoreId,
-                     keySchema: StructType,
-                     valueSchema: StructType,
-                     keyIndexOrdinal: Option[Int],
-                     storeConf: StateStoreConf,
-                     hadoopConf: Configuration): Unit = {
-    this.stateStoreId_ = stateStoreId
-    this.keySchema = keySchema
-    this.valueSchema = valueSchema
-    this.storeConf = storeConf
-    this.hadoopConf = hadoopConf
-    this.redisConf = setRedisConf(this.storeConf.confs)
-    log.info("Initializing the redis state store")
+    override def init(
+                         stateStoreId: StateStoreId,
+                         keySchema: StructType,
+                         valueSchema: StructType,
+                         keyIndexOrdinal: Option[Int],
+                         storeConf: StateStoreConf,
+                         hadoopConf: Configuration): Unit = {
+        this.stateStoreId_ = stateStoreId
+        this.keySchema = keySchema
+        this.valueSchema = valueSchema
+        this.storeConf = storeConf
+        this.hadoopConf = hadoopConf
+        this.redisConf = setRedisConf(this.storeConf.confs)
+        log.info("Initializing the redis state store")
 
-  }
-
-  override def stateStoreId: StateStoreId = stateStoreId_
-
-  override def close(): Unit = {}
-
-  override def getStore(version: Long): StateStore = synchronized {
-    require(version >= 0, "Version cannot be less than 0")
-    val store = new RedisStateStore(version, redisConf)
-    logInfo(s"Retrieved version $version of ${RedisStateStoreProvider.this} for update")
-    store
-  }
-
-  override def toString: String = {
-    s"RedisStateStoreProvider[id = (op=${stateStoreId.operatorId},part=${stateStoreId.partitionId}),redis=$redisConf]"
-  }
-
-  private def verify(condition: => Boolean, msg: String): Unit = {
-    if (!condition) {
-      throw new IllegalStateException(msg)
-    }
-  }
-
-  class RedisStateStore(val version: Long, redisConf: RedisConf) extends StateStore {
-
-    trait STATE
-
-    case object UPDATING extends STATE
-
-    case object COMMITTED extends STATE
-
-    case object ABORTED extends STATE
-
-    private val newVersion = version + 1
-    @volatile private var state: STATE = UPDATING
-
-    private lazy val commitableClient = new Jedis(redisConf.host, redisConf.port)
-    private lazy val commitableTransaction = commitableClient.multi()
-
-    override def id: StateStoreId = RedisStateStoreProvider.this.stateStoreId
-
-    override def get(key: UnsafeRow): UnsafeRow = {
-      val getClient = new Jedis(redisConf.host, redisConf.port)
-      val getTransaction = getClient.multi()
-      val transactionData = getTransaction.get(key.getBytes)
-      getTransaction.exec()
-      val valueBytes = transactionData.get()
-      val value = new UnsafeRow(valueSchema.fields.length)
-      if (valueBytes == null) return null
-      value.pointTo(valueBytes, valueBytes.length)
-      value
     }
 
-    override def put(key: UnsafeRow, value: UnsafeRow): Unit = {
-      verify(state == UPDATING, "Cannot put after already committed or aborted")
-      commitableTransaction.set(key.getBytes, value.getBytes)
+    override def stateStoreId: StateStoreId = stateStoreId_
+
+    override def close(): Unit = {}
+
+    override def getStore(version: Long): StateStore = synchronized {
+        require(version >= 0, "Version cannot be less than 0")
+        val store = new RedisStateStore(version, redisConf)
+        logInfo(s"Retrieved version $version of ${RedisStateStoreProvider.this} for update")
+        store
     }
 
-    override def remove(unsafeKey: UnsafeRow): Unit = {}
-
-    override def commit(): Long = {
-      verify(state == UPDATING, "Cannot commit after already committed or aborted")
-      commitableTransaction.exec()
-      state = COMMITTED
-      log.info(s"Committed version $newVersion for $this")
-      newVersion
+    override def toString: String = {
+        s"RedisStateStoreProvider[id = (op=${stateStoreId.operatorId},part=${stateStoreId.partitionId}),redis=$redisConf]"
     }
 
-    override def abort(): Unit = {}
-
-    override def iterator(): Iterator[UnsafeRowPair] = Iterator()
-
-    override def metrics: StateStoreMetrics = {
-      StateStoreMetrics(0, 0, Map())
+    private def verify(condition: => Boolean, msg: String): Unit = {
+        if (!condition) {
+            throw new IllegalStateException(msg)
+        }
     }
 
-    override def hasCommitted: Boolean = {
-      state == COMMITTED
+    class RedisStateStore(val version: Long, redisConf: RedisConf) extends StateStore {
+
+        trait STATE
+
+        case object UPDATING extends STATE
+
+        case object COMMITTED extends STATE
+
+        case object ABORTED extends STATE
+
+        private val newVersion = version + 1
+        @volatile private var state: STATE = UPDATING
+
+        private lazy val commitableClient = new Jedis(redisConf.host, redisConf.port)
+        private lazy val commitableTransaction = commitableClient.multi()
+
+        override def id: StateStoreId = RedisStateStoreProvider.this.stateStoreId
+
+        override def get(key: UnsafeRow): UnsafeRow = {
+            val getClient = new Jedis(redisConf.host, redisConf.port)
+            val getTransaction = getClient.multi()
+            val transactionData = getTransaction.get(redisConf.bytePrefix ++ key.getBytes)
+            getTransaction.exec()
+            val valueBytes = transactionData.get()
+            val value = new UnsafeRow(valueSchema.fields.length)
+            if (valueBytes == null) return null
+            value.pointTo(valueBytes, valueBytes.length)
+            value
+        }
+
+        override def put(key: UnsafeRow, value: UnsafeRow): Unit = {
+            verify(state == UPDATING, "Cannot put after already committed or aborted")
+            commitableTransaction.set(redisConf.bytePrefix ++ key.getBytes, value.getBytes)
+        }
+
+        override def remove(unsafeKey: UnsafeRow): Unit = {}
+
+        override def commit(): Long = {
+            verify(state == UPDATING, "Cannot commit after already committed or aborted")
+            commitableTransaction.exec()
+            state = COMMITTED
+            log.info(s"Committed version $newVersion for $this")
+            newVersion
+        }
+
+        override def abort(): Unit = {}
+
+        override def iterator(): Iterator[UnsafeRowPair] = {
+            val iterClient = new Jedis(redisConf.host, redisConf.port)
+            val keysIter = iterClient.keys(redisConf.bytePrefix).iterator().asScala
+            keysIter.map { redisKey =>
+                val key = new UnsafeRow(keySchema.fields.length)
+                val keyBytes = redisKey
+                key.pointTo(keyBytes, keyBytes.length)
+
+                val value = new UnsafeRow(valueSchema.fields.length)
+                val valueBytes = iterClient.get(redisKey)
+                value.pointTo(valueBytes, valueBytes.length)
+                new UnsafeRowPair(key, value)
+            }
+        }
+
+        override def metrics: StateStoreMetrics = {
+            StateStoreMetrics(0, 0, Map())
+        }
+
+        override def hasCommitted: Boolean = {
+            state == COMMITTED
+        }
     }
-  }
 
 }
 
 
 object RedisStateStoreProvider {
-  final val DEFAULT_REDIS_HOST: String = "localhost"
-  final val DEFAULT_REDIS_PORT: String = "6379"
-  final val REDIS_HOST: String = "spark.sql.streaming.stateStore.redis.host"
-  final val REDIS_PORT: String = "spark.sql.streaming.stateStore.redis.port"
+    final val DEFAULT_REDIS_HOST: String = "localhost"
+    final val DEFAULT_REDIS_PORT: String = "6379"
 
-  private def setRedisConf(conf: Map[String, String]): RedisConf = {
-    val host = Try(conf.getOrElse(REDIS_HOST, DEFAULT_REDIS_HOST)) match {
-      case Success(value) => value
-      case Failure(e) => throw new IllegalArgumentException(e)
+    final val REDIS_HOST: String = "spark.sql.streaming.stateStore.redis.host"
+    final val REDIS_PORT: String = "spark.sql.streaming.stateStore.redis.port"
+    final val REDIS_PREFIX: String = "spark.sql.streaming.stateStore.redis.prefix"
+
+    private def setRedisConf(conf: Map[String, String]): RedisConf = {
+        val host = Try(conf.getOrElse(REDIS_HOST, DEFAULT_REDIS_HOST)) match {
+            case Success(value) => value
+            case Failure(e) => throw new IllegalArgumentException(e)
+        }
+        val port = Try(conf.getOrElse(REDIS_PORT, DEFAULT_REDIS_PORT).toInt) match {
+            case Success(value) => value
+            case Failure(e) => throw new IllegalArgumentException(e)
+        }
+        val prefix = Try(conf.getOrElse(REDIS_PREFIX, conf("spark.app.name"))) match {
+            case Success(value) => value
+            case Failure(e) => throw new IllegalArgumentException(e)
+        }
+        RedisConf(host, port, prefix)
     }
-    val port = Try(conf.getOrElse(REDIS_PORT, DEFAULT_REDIS_PORT).toInt) match {
-      case Success(value) => value
-      case Failure(e) => throw new IllegalArgumentException(e)
-    }
-    RedisConf(host, port)
-  }
 
 }

@@ -11,58 +11,77 @@ import org.scalatest.FunSuite
 
 class RedistateTest extends FunSuite with SparkSupport with RedisSupport with Logging {
 
-  lazy val checkpointLocation: String = Files.createTempDirectory("redistate-test").toString
-  var query: StreamingQuery = _
+    lazy val checkpointLocation: String = Files.createTempDirectory("redistate-test").toString
+    var query: StreamingQuery = _
 
-  test("execute stateful operation") {
+    test("execute stateful operation") {
 
-    spark.sparkContext.setLogLevel("INFO")
+        spark.sparkContext.setLogLevel("INFO")
 
-    implicit val sqlCtx: SQLContext = spark.sqlContext
-    import sqlCtx.implicits._
+        implicit val sqlCtx: SQLContext = spark.sqlContext
+        import sqlCtx.implicits._
 
-    val visitsStream = MemoryStream[PageVisit]
+        val visitsStream = MemoryStream[PageVisit]
 
-    val pageVisitsTypedStream: Dataset[PageVisit] = visitsStream.toDS()
+        val pageVisitsTypedStream: Dataset[PageVisit] = visitsStream.toDS()
 
-    val initialBatch = Seq(
-      generateEvent(1),
-      generateEvent(1),
-      generateEvent(1),
-      generateEvent(1),
-      generateEvent(2),
-    )
+        val noTimeout = GroupStateTimeout.NoTimeout
+        val userStatisticsStream = pageVisitsTypedStream
+            .groupByKey(_.id)
+            .mapGroupsWithState(noTimeout)(updateUserStatistics)
 
-    visitsStream.addData(initialBatch)
+        query = userStatisticsStream.writeStream
+            .outputMode(OutputMode.Update())
+            .option("checkpointLocation", checkpointLocation)
+            .foreachBatch(printBatch _)
+            .format("memory")
+            .queryName("redistate_updates")
+            .start()
 
-    val noTimeout = GroupStateTimeout.NoTimeout
-    val userStatisticsStream = pageVisitsTypedStream
-      .groupByKey(_.id)
-      .mapGroupsWithState(noTimeout)(updateUserStatistics)
+        spark.sql("select * from redistate_updates").show()
 
-    query = userStatisticsStream.writeStream
-      .outputMode(OutputMode.Update())
-      .option("checkpointLocation", checkpointLocation)
-      .foreachBatch(printBatch _)
-      .start()
+        val initialBatch = Seq(
+            generateEvent(1),
+            generateEvent(1),
+            generateEvent(1),
+            generateEvent(1),
+            generateEvent(2)
+        )
 
-    processDataWithLock(query)
+        visitsStream.addData(initialBatch)
 
-  }
+        processDataWithLock(query)
+        spark.sql("select * from redistate_updates").show()
 
+        val additionalBatch = Seq(
+            generateEvent(2),
+            generateEvent(3)
+        )
 
-  def printBatch(batchData: Dataset[UserStatistics], batchId: Long): Unit = {
-    log.info(s"Started working with batch id $batchId")
-    log.info(s"Successfully finished working with batch id $batchId, dataset size: ${batchData.count()}")
-  }
+        visitsStream.addData(additionalBatch)
 
-  def processDataWithLock(query: StreamingQuery): Unit = {
-    query.processAllAvailable()
-    while (query.status.message != "Waiting for data to arrive") {
-      log.info(s"Waiting for the query to finish processing, current status is ${query.status.message}")
-      Thread.sleep(1)
+        processDataWithLock(query)
+
+        spark.sql("select * from redistate_updates").show()
+
+//        assert(result.find(_.userId == 2).get.totalVisits == 2)
+//        assert(result.find(_.userId == 3).get.totalVisits == 1)
     }
-    log.info("Locking the thread for another 5 seconds for state operations cleanup")
-    Thread.sleep(5000)
-  }
+
+
+    def printBatch(batchData: Dataset[UserStatistics], batchId: Long): Unit = {
+        log.info(s"Started working with batch id $batchId")
+        batchData.show()
+        log.info(s"Successfully finished working with batch id $batchId, dataset size: ${batchData.count()}")
+    }
+
+    def processDataWithLock(query: StreamingQuery): Unit = {
+        query.processAllAvailable()
+        while (query.status.message != "Waiting for data to arrive") {
+            log.info(s"Waiting for the query to finish processing, current status is ${query.status.message}")
+            Thread.sleep(1)
+        }
+        log.info("Locking the thread for another 5 seconds for state operations cleanup")
+        Thread.sleep(5000)
+    }
 }
